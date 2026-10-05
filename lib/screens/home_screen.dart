@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../models/carousel_item.dart';
 import '../models/host.dart';
+import '../models/instagram_post.dart';
 import '../models/youtube_video.dart';
+import '../services/instagram_service.dart';
+import '../services/notification_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/host_card.dart';
 import '../widgets/social_button.dart';
@@ -18,10 +23,17 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final YoutubeService _youtubeService = YoutubeService();
+  final InstagramService _instagramService = InstagramService();
+  final NotificationService _notificationService = NotificationService();
+
   List<YoutubeVideo> _videos = [];
+  List<CarouselItem> _carouselItems = [];
   bool _isLoading = true;
 
-  // List of Host objects with their respective names, bios, icons, and themes
+  // New Video Notification state
+  YoutubeVideo? _newVideoAlert;
+  bool _showNewVideoBanner = false;
+
   final List<Host> _hosts = [
     Host(
       name: 'Luan Carvalho',
@@ -58,222 +70,368 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadVideos();
+    _loadData();
   }
 
-  Future<void> _loadVideos() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
     });
-    final fetched = await _youtubeService.fetchVideos();
+
+    final results = await Future.wait([
+      _youtubeService.fetchVideos(),
+      _instagramService.fetchLatestPosts(),
+    ]);
+
+    final fetchedVideos = results[0] as List<YoutubeVideo>;
+    final fetchedPosts = results[1] as List<InstagramPost>;
+
+    // Intercalate 5 Youtube videos and 5 Instagram posts
+    final List<CarouselItem> items = [];
+    final takeCount = 5;
+    final topVideos = fetchedVideos.take(takeCount).toList();
+    final topPosts = fetchedPosts.take(takeCount).toList();
+
+    for (int i = 0; i < takeCount; i++) {
+      if (i < topVideos.length) {
+        items.add(CarouselItem.fromYoutube(topVideos[i]));
+      }
+      if (i < topPosts.length) {
+        items.add(CarouselItem.fromInstagram(topPosts[i]));
+      }
+    }
+
     if (mounted) {
       setState(() {
-        _videos = fetched;
+        _videos = fetchedVideos;
+        _carouselItems = items;
         _isLoading = false;
       });
+
+      // Check for new video notification
+      if (fetchedVideos.isNotEmpty) {
+        final newestVideo = fetchedVideos.first;
+        final isNew = await _notificationService.checkForNewVideo(newestVideo);
+        if (isNew && mounted) {
+          setState(() {
+            _newVideoAlert = newestVideo;
+            _showNewVideoBanner = true;
+          });
+        }
+      }
     }
   }
 
+  Future<void> _openUrl(String url) async {
+    final Uri uri = Uri.parse(url);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('Could not launch $uri: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D1B2A), // Deep midnight blue
+      backgroundColor: const Color(0xFF0D1B2A),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF0F172A), // Slate 900
-              Color(0xFF070A13), // Deep dark space blue
+              Color(0xFF0F172A),
+              Color(0xFF070A13),
             ],
           ),
         ),
         child: SafeArea(
-          child: RefreshIndicator(
-            color: const Color(0xFF00B4D8),
-            backgroundColor: const Color(0xFF1E293B),
-            onRefresh: _loadVideos,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // 1. Logo Section
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Center(
-                      child: Container(
-                        height: 100,
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF00B4D8).withOpacity(0.2),
-                              blurRadius: 25,
-                              spreadRadius: 2,
+          child: Stack(
+            children: [
+              RefreshIndicator(
+                color: const Color(0xFF00B4D8),
+                backgroundColor: const Color(0xFF1E293B),
+                onRefresh: _loadData,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // 1. Logo Section
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Center(
+                          child: Container(
+                            height: 100,
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF00B4D8).withOpacity(0.2),
+                                  blurRadius: 25,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Image.asset(
+                                'assets/images/logo.jpg',
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Carousel Widget (Intercalado)
+                      _isLoading
+                          ? Container(
+                              height: 210,
+                              margin: const EdgeInsets.symmetric(horizontal: 24),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B).withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.white10),
+                              ),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  color: Color(0xFF00B4D8),
+                                ),
+                              ),
+                            )
+                          : VideoCarousel(items: _carouselItems),
+
+                      const SizedBox(height: 12),
+
+                      // "Ver Todos os Episódios" Button
+                      TextButton(
+                        onPressed: () {
+                          if (_videos.isNotEmpty) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => VideoListScreen(videos: _videos),
+                              ),
+                            );
+                          }
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF00B4D8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Ver Todos os Episódios',
+                              style: GoogleFonts.outfit(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 14,
                             ),
                           ],
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: Image.asset(
-                            'assets/images/logo.jpg',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 30),
 
-                  // 2. Videos Carousel Title / Header
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Últimos Episódios',
-                        style: GoogleFonts.outfit(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
+                      const SizedBox(height: 24),
 
-                  // YouTube Carousel Content
-                  _isLoading
-                      ? Container(
-                          height: 210,
-                          margin: const EdgeInsets.symmetric(horizontal: 24),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E293B).withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white10),
-                          ),
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF00B4D8),
+                      // 3. Hosts Section Title
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Conheça os Hosts',
+                            style: GoogleFonts.outfit(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
                             ),
                           ),
-                        )
-                      : VideoCarousel(videos: _videos),
-
-                  const SizedBox(height: 12),
-
-                  // "Ver Todos" (View All) Text/Button below Carousel
-                  TextButton(
-                    onPressed: () {
-                      if (_videos.isNotEmpty) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => VideoListScreen(videos: _videos),
-                          ),
-                        );
-                      }
-                    },
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF00B4D8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Ver Todos',
-                          style: GoogleFonts.outfit(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                          ),
                         ),
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: 14,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Horizontal layout of Host cards
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: _hosts.map((host) => HostCard(host: host)).toList(),
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
 
-                  const SizedBox(height: 24),
+                      const SizedBox(height: 36),
 
-                  // 3. Hosts Section Title
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Conheça os Hosts',
+                      // 4. Social Media Section
+                      Text(
+                        'Redes Sociais',
                         style: GoogleFonts.outfit(
-                          color: Colors.white,
-                          fontSize: 18,
+                          color: Colors.white70,
+                          fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
+                          letterSpacing: 1.5,
                         ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Row of Social buttons
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 24),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SocialButton(
+                              type: SocialType.instagram,
+                              url: 'https://www.instagram.com/digaacao.podcast',
+                            ),
+                            SocialButton(
+                              type: SocialType.tiktok,
+                              url: 'https://www.tiktok.com/@digaacao.podcast',
+                            ),
+                            SocialButton(
+                              type: SocialType.spotify,
+                              url: 'https://open.spotify.com/show/6VuajYlMFBOurqejVpNKcO?si=yP-wTPbsQNyom69fhYhGmw&nd=1&dlsi=40355371d83d47b3',
+                            ),
+                            SocialButton(
+                              type: SocialType.youtube,
+                              url: 'https://www.youtube.com/@Digaac%C3%A3o',
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Floating Notification Banner for New Video
+              if (_showNewVideoBanner && _newVideoAlert != null)
+                Positioned(
+                  top: 12,
+                  left: 16,
+                  right: 16,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFF0F2027),
+                            Color(0xFF203A43),
+                            Color(0xFF2C5364),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF00B4D8).withOpacity(0.4),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                        border: Border.all(
+                          color: const Color(0xFF00B4D8),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF00B4D8),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.notifications_active_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '🎬 NOVO VÍDEO DISPONÍVEL!',
+                                  style: GoogleFonts.outfit(
+                                    color: const Color(0xFF00B4D8),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _newVideoAlert!.title,
+                                  style: GoogleFonts.outfit(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: () {
+                              _openUrl(_newVideoAlert!.url);
+                              setState(() {
+                                _showNewVideoBanner = false;
+                              });
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF00B4D8),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: Text(
+                              'Assistir',
+                              style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                            onPressed: () {
+                              setState(() {
+                                _showNewVideoBanner = false;
+                              });
+                            },
+                            constraints: const BoxConstraints(),
+                            padding: const EdgeInsets.only(left: 6),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Horizontal layout of Host cards
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: _hosts.map((host) => HostCard(host: host)).toList(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 36),
-
-                  // 4. Social Media Section
-                  Text(
-                    'Redes Sociais',
-                    style: GoogleFonts.outfit(
-                      color: Colors.white70,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Row of Social buttons
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 24),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SocialButton(
-                          type: SocialType.instagram,
-                          url: 'https://www.instagram.com/digaacao.podcast',
-                        ),
-                        SocialButton(
-                          type: SocialType.tiktok,
-                          url: 'https://www.tiktok.com/@digaacao.podcast',
-                        ),
-                        SocialButton(
-                          type: SocialType.spotify,
-                          url: 'https://open.spotify.com/show/6VuajYlMFBOurqejVpNKcO?si=yP-wTPbsQNyom69fhYhGmw&nd=1&dlsi=40355371d83d47b3',
-                        ),
-                        SocialButton(
-                          type: SocialType.youtube,
-                          url: 'https://www.youtube.com/@Digaac%C3%A3o',
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
+                ),
+            ],
           ),
         ),
       ),

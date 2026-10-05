@@ -1,4 +1,4 @@
-package com.digaacao.digaacao
+package com.newtongaliza.digaacao
 
 import io.flutter.embedding.android.FlutterActivity
 

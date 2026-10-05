@@ -8,7 +8,7 @@
 PRODUCT_NAME = Diga Ação! Podcast
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.digaacao.digaacao
+PRODUCT_BUNDLE_IDENTIFIER = com.newtongaliza.digaacao
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.digaacao. All rights reserved.

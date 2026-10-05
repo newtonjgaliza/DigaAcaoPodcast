@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../models/youtube_video.dart';
+import '../models/carousel_item.dart';
 
 class VideoCarousel extends StatefulWidget {
-  final List<YoutubeVideo> videos;
+  final List<CarouselItem> items;
 
   const VideoCarousel({
     super.key,
-    required this.videos,
+    required this.items,
   });
 
   @override
@@ -34,7 +35,7 @@ class _VideoCarouselState extends State<VideoCarousel> {
     super.dispose();
   }
 
-  Future<void> _playVideo(String url) async {
+  Future<void> _openUrl(String url) async {
     final Uri uri = Uri.parse(url);
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -45,9 +46,9 @@ class _VideoCarouselState extends State<VideoCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.videos.isEmpty) {
+    if (widget.items.isEmpty) {
       return Container(
-        height: 200,
+        height: 210,
         margin: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
           color: Colors.white10,
@@ -59,8 +60,7 @@ class _VideoCarouselState extends State<VideoCarousel> {
       );
     }
 
-    // Limit to 5 videos for carousel
-    final carouselVideos = widget.videos.take(5).toList();
+    final carouselItems = widget.items;
 
     return Column(
       children: [
@@ -73,9 +73,9 @@ class _VideoCarouselState extends State<VideoCarousel> {
                 _currentPage = index;
               });
             },
-            itemCount: carouselVideos.length,
+            itemCount: carouselItems.length,
             itemBuilder: (context, index) {
-              final video = carouselVideos[index];
+              final item = carouselItems[index];
               return AnimatedBuilder(
                 animation: _pageController,
                 builder: (context, child) {
@@ -93,7 +93,7 @@ class _VideoCarouselState extends State<VideoCarousel> {
                   );
                 },
                 child: GestureDetector(
-                  onTap: () => _playVideo(video.url),
+                  onTap: () => _openUrl(item.url),
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
@@ -101,13 +101,17 @@ class _VideoCarouselState extends State<VideoCarousel> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF00B4D8).withOpacity(0.15),
-                          blurRadius: 10,
+                          color: item.isYoutube
+                              ? const Color(0xFF00B4D8).withOpacity(0.18)
+                              : const Color(0xFFE1306C).withOpacity(0.22),
+                          blurRadius: 12,
                           offset: const Offset(0, 5),
                         ),
                       ],
                       border: Border.all(
-                        color: Colors.white10,
+                        color: item.isYoutube
+                            ? Colors.white10
+                            : const Color(0xFFE1306C).withOpacity(0.3),
                         width: 1,
                       ),
                     ),
@@ -116,21 +120,25 @@ class _VideoCarouselState extends State<VideoCarousel> {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          // Video Thumbnail
+                          // Thumbnail Image
                           Image.network(
-                            video.thumbnailUrl,
+                            item.imageUrl,
                             fit: BoxFit.cover,
                             loadingBuilder: (context, child, loadingProgress) {
                               if (loadingProgress == null) return child;
                               return Container(
                                 color: Colors.black26,
-                                child: const Center(
+                                child: Center(
                                   child: SizedBox(
                                     width: 30,
                                     height: 30,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00B4D8)),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        item.isYoutube
+                                            ? const Color(0xFF00B4D8)
+                                            : const Color(0xFFE1306C),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -139,11 +147,17 @@ class _VideoCarouselState extends State<VideoCarousel> {
                             errorBuilder: (context, error, stackTrace) {
                               return Container(
                                 color: Colors.black45,
-                                child: const Icon(
-                                  Icons.movie_creation_outlined,
-                                  color: Colors.white54,
-                                  size: 40,
-                                ),
+                                child: item.isYoutube
+                                    ? const Icon(
+                                        Icons.movie_creation_outlined,
+                                        color: Colors.white54,
+                                        size: 40,
+                                      )
+                                    : const FaIcon(
+                                        FontAwesomeIcons.instagram,
+                                        color: Colors.white54,
+                                        size: 40,
+                                      ),
                               );
                             },
                           ),
@@ -161,29 +175,59 @@ class _VideoCarouselState extends State<VideoCarousel> {
                               ),
                             ),
                           ),
-                          // Play Icon overlay
+
+                          // Icon overlay (Play Icon for YouTube, Instagram Icon for Posts)
                           Center(
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF00B4D8).withOpacity(0.85),
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(0xFF00B4D8).withOpacity(0.4),
-                                    blurRadius: 15,
-                                    spreadRadius: 2,
+                            child: item.isYoutube
+                                ? Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF00B4D8).withOpacity(0.85),
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF00B4D8).withOpacity(0.4),
+                                          blurRadius: 15,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.play_arrow_rounded,
+                                      color: Colors.white,
+                                      size: 30,
+                                    ),
+                                  )
+                                : Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFF833AB4),
+                                          Color(0xFFFD1D1D),
+                                          Color(0xFFF77737),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFFE1306C).withOpacity(0.5),
+                                          blurRadius: 15,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                    child: const FaIcon(
+                                      FontAwesomeIcons.instagram,
+                                      color: Colors.white,
+                                      size: 26,
+                                    ),
                                   ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.play_arrow_rounded,
-                                color: Colors.white,
-                                size: 30,
-                              ),
-                            ),
                           ),
-                          // Video Title & Tag
+
+                          // Title & Badge
                           Positioned(
                             bottom: 12,
                             left: 16,
@@ -192,15 +236,30 @@ class _VideoCarouselState extends State<VideoCarousel> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Video/Short Badge
+                                // Badge
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
-                                    color: video.isShort ? Colors.red : const Color(0xFF00B4D8),
+                                    gradient: item.isYoutube
+                                        ? null
+                                        : const LinearGradient(
+                                            colors: [
+                                              Color(0xFF833AB4),
+                                              Color(0xFFFD1D1D),
+                                              Color(0xFFF58529),
+                                            ],
+                                          ),
+                                    color: item.isYoutube
+                                        ? (item.video?.isShort == true
+                                            ? Colors.red
+                                            : const Color(0xFF00B4D8))
+                                        : null,
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
-                                    video.isShort ? 'SHORT' : 'EPISÓDIO',
+                                    item.isYoutube
+                                        ? (item.video?.isShort == true ? 'SHORT' : 'EPISÓDIO')
+                                        : 'INSTAGRAM',
                                     style: GoogleFonts.outfit(
                                       color: Colors.white,
                                       fontSize: 9,
@@ -210,9 +269,9 @@ class _VideoCarouselState extends State<VideoCarousel> {
                                   ),
                                 ),
                                 const SizedBox(height: 6),
-                                // Title text
+                                // Title / Caption text
                                 Text(
-                                  video.title,
+                                  item.title,
                                   style: GoogleFonts.outfit(
                                     color: Colors.white,
                                     fontSize: 13,
@@ -239,14 +298,18 @@ class _VideoCarouselState extends State<VideoCarousel> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(
-            carouselVideos.length,
+            carouselItems.length,
             (index) => AnimatedContainer(
               duration: const Duration(milliseconds: 250),
               width: _currentPage == index ? 20 : 6,
               height: 6,
               margin: const EdgeInsets.symmetric(horizontal: 3),
               decoration: BoxDecoration(
-                color: _currentPage == index ? const Color(0xFF00B4D8) : Colors.white24,
+                color: _currentPage == index
+                    ? (carouselItems[index].isYoutube
+                        ? const Color(0xFF00B4D8)
+                        : const Color(0xFFE1306C))
+                    : Colors.white24,
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
